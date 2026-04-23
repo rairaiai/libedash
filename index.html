@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>🦁 リベシティ 24hまとめ</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1a2e;color:#eee;font-family:-apple-system,sans-serif}
+#header{background:#16213e;padding:12px 16px;position:sticky;top:0;z-index:10;border-bottom:2px solid #0f3460;display:flex;align-items:center;justify-content:space-between}
+#header h1{font-size:16px;font-weight:bold}
+.btn-blue{background:#3498db;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+.btn-red{background:#e74c3c;color:white;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+#summary{background:#0f3460;padding:8px 16px;display:flex;gap:16px;font-size:13px;flex-wrap:wrap}
+#grid{display:grid;grid-template-columns:1fr;gap:12px;padding:12px}
+@media(min-width:700px){#grid{grid-template-columns:1fr 1fr}}
+.card{background:#16213e;border-radius:10px;overflow:hidden;border:1px solid #0f3460}
+.card-header{background:#0f3460;padding:10px 14px;display:flex;align-items:center;justify-content:space-between}
+.card-title{font-weight:bold;font-size:14px}
+.badge{color:white;padding:2px 10px;border-radius:12px;font-size:12px}
+.badge-green{background:#27ae60}.badge-gray{background:#555}
+.msg-list{max-height:280px;overflow-y:auto;padding:8px}
+.msg-item{padding:8px;border-bottom:1px solid #0f3460;cursor:pointer}
+.msg-item:active{background:#1e3a5f}
+.msg-meta{display:flex;align-items:center;gap:6px;margin-bottom:4px;flex-wrap:wrap}
+.all-badge{background:#e74c3c;color:white;font-size:10px;padding:1px 5px;border-radius:3px}
+.user-name{color:#3498db;font-size:12px}
+.time-ago{color:#888;font-size:11px;margin-left:auto}
+.msg-text{font-size:13px;color:#ddd;line-height:1.5}
+.empty{color:#888;padding:16px;text-align:center;font-size:13px}
+.card-footer{padding:6px 10px;background:#0a1628;text-align:right}
+.card-footer a{color:#3498db;font-size:12px;text-decoration:none}
+#loading{position:fixed;top:0;left:0;width:100%;height:100%;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;gap:12px}
+#loading p{font-size:22px}
+#loading small{color:#aaa;font-size:13px}
+#setup{padding:20px;max-width:500px;margin:0 auto}
+#setup h2{font-size:16px;margin-bottom:12px;color:#f1c40f}
+#setup p{font-size:13px;color:#aaa;line-height:1.8;margin-bottom:12px}
+#setup code{background:#0d0d0d;color:#2ecc71;padding:4px 8px;border-radius:4px;font-size:12px;display:block;margin:6px 0;word-break:break-all}
+#token-input{width:100%;background:#0d0d0d;color:#2ecc71;border:2px solid #2ecc71;border-radius:6px;padding:10px;font-size:12px;font-family:monospace;height:90px;margin-bottom:10px}
+#token-submit{width:100%;background:#27ae60;color:white;border:none;padding:12px;border-radius:6px;font-size:15px;cursor:pointer;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="loading"><p>🦁</p><small id="lmsg">起動中...</small></div>
+<div id="app" style="display:none">
+  <div id="header">
+    <h1>🦁 リベシティ 24hまとめ</h1>
+    <div style="display:flex;gap:8px">
+      <button class="btn-blue" onclick="loadDashboard()">🔄</button>
+      <button class="btn-red" onclick="logout()">再設定</button>
+    </div>
+  </div>
+  <div id="summary"></div>
+  <div id="grid"></div>
+</div>
+<div id="setup-screen" style="display:none">
+  <div id="setup">
+    <h2>🔑 初回設定（1回だけ）</h2>
+    <p>PCでリベシティを開き、<b>F12キー</b>を押して開発者ツールを開いてください。上部の「<b>Console</b>」タブをクリックして、以下をコピー＆ペーストしてEnterを押してください：</p>
+    <code>copy(localStorage.getItem('token'))</code>
+    <p>クリップボードにトークンがコピーされます。<br>下の欄に貼り付けて「保存して開始」を押してください。</p>
+    <p style="color:#e74c3c;font-size:12px">⚠️ このページはあなたのブラウザにのみ保存されます。他人には見えません。</p>
+    <textarea id="token-input" placeholder="トークンをここに貼り付け..."></textarea>
+    <button id="token-submit">✅ 保存して開始</button>
+  </div>
+</div>
+<script>
+var ROOMS=[
+  {id:'President-Tweet',name:'学長マガジンチャット'},
+  {id:'LIVE-Text',name:'学長ライブまとめチャット'},
+  {id:'President-investment-magazine',name:'学長高配当株マガジンチャット'},
+  {id:'Chapel',name:'学長！ちょっと聞いてチャット'},
+  {id:'NagoyaOffice',name:'愛知（名古屋）オフィスチャット'},
+  {id:'Tokai',name:'東海支部'}
+];
+var PROJECT='production-b8884';
+var BASE='https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/rooms/';
+var API_KEY='AIzaSyDxUFU2BiEQ1By3EKL8DL6IxoWgzutmR18';
+var userCache={};
+var currentToken=null;
+
+function setMsg(m){document.getElementById('lmsg').textContent=m;}
+function showLoading(){document.getElementById('loading').style.display='flex';document.getElementById('app').style.display='none';document.getElementById('setup-screen').style.display='none';}
+function showApp(){document.getElementById('loading').style.display='none';document.getElementById('app').style.display='block';document.getElementById('setup-screen').style.display='none';}
+function showSetup(){document.getElementById('loading').style.display='none';document.getElementById('app').style.display='none';document.getElementById('setup-screen').style.display='block';}
+function logout(){localStorage.removeItem('libe_refresh');localStorage.removeItem('libe_access_temp');location.reload();}
+
+function getNewToken(refresh){
+  return fetch('https://securetoken.googleapis.com/v1/token?key='+API_KEY,{
+    method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(refresh)
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.id_token){currentToken=d.id_token;if(d.refresh_token)localStorage.setItem('libe_refresh',d.refresh_token);return d.id_token;}
+    throw new Error(d.error&&d.error.message||'token error');
+  });
+}
+
+function getUser(uid){
+  if(userCache[uid])return Promise.resolve(userCache[uid]);
+  return fetch('https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents/users/'+uid,{headers:{'Authorization':'Bearer '+currentToken}})
+    .then(function(r){return r.json();}).then(function(d){var n=(d.fields&&d.fields.name&&d.fields.name.stringValue)||uid;userCache[uid]=n;return n;}).catch(function(){return uid;});
+}
+function stripHtml(h){var d=document.createElement('div');d.innerHTML=h;return d.textContent||d.innerText||'';}
+function timeAgo(ts){var s=Math.floor((Date.now()-new Date(ts).getTime())/1000);if(s<60)return s+'秒前';if(s<3600)return Math.floor(s/60)+'分前';if(s<86400)return Math.floor(s/3600)+'時間前';return Math.floor(s/86400)+'日前';}
+
+function fetchRoom(room){
+  var since=new Date(Date.now()-24*60*60*1000).toISOString();
+  return fetch(BASE+room.id+'/messages?pageSize=100&orderBy=created_at+desc',{headers:{'Authorization':'Bearer '+currentToken}})
+    .then(function(r){return r.json();}).then(function(data){
+      var docs=(data.documents||[]).filter(function(d){
+        if(!d.fields)return false;
+        if(d.fields.is_delete&&d.fields.is_delete.booleanValue)return false;
+        var ts=d.fields.created_at&&d.fields.created_at.timestampValue;
+        return ts&&ts>since;
+      });
+      return Promise.all(docs.map(function(d){
+        var uid=(d.fields.uid&&d.fields.uid.stringValue)||'';
+        var txt=(d.fields.contents&&d.fields.contents.stringValue)||'';
+        var ts=d.fields.created_at.timestampValue;
+        var isAll=!!(d.fields.is_all&&d.fields.is_all.booleanValue);
+        var parts=(d.name||'').split('/');
+        var commentId=parts[parts.length-1];
+        return getUser(uid).then(function(u){return{user:u,text:stripHtml(txt),time:ts,isAll:isAll,commentId:commentId,roomId:room.id};});
+      }));
+    }).then(function(msgs){return{room:room,msgs:msgs};}).catch(function(e){return{room:room,msgs:[],error:e.message};});
+}
+
+function renderDashboard(results){
+  var total=results.reduce(function(s,r){return s+r.msgs.length;},0);
+  var now=new Date();var pad=function(n){return n.toString().padStart(2,'0');};
+  var ds=(now.getMonth()+1)+'/'+pad(now.getDate())+' '+pad(now.getHours())+':'+pad(now.getMinutes());
+  document.getElementById('summary').innerHTML='<span>📊 '+ROOMS.length+'チャット</span><span>📝 投稿あり: <b>'+results.filter(function(r){return r.msgs.length>0;}).length+'</b></span><span>💬 合計: <b>'+total+'件</b></span><span style="color:#aaa;margin-left:auto;">'+ds+'</span>';
+  var grid=document.getElementById('grid');grid.innerHTML='';
+  results.forEach(function(r){
+    var card=document.createElement('div');card.className='card';
+    var ch=document.createElement('div');ch.className='card-header';
+    ch.innerHTML='<span class="card-title">'+r.room.name+'</span><span class="badge '+(r.msgs.length>0?'badge-green':'badge-gray')+'">'+r.msgs.length+'件</span>';
+    card.appendChild(ch);
+    var ml=document.createElement('div');ml.className='msg-list';
+    if(r.error){ml.innerHTML='<div class="empty" style="color:#e74c3c">⚠️ '+r.error+'</div>';}
+    else if(r.msgs.length===0){ml.innerHTML='<div class="empty">💤 24時間以内の投稿はありません</div>';}
+    else{r.msgs.forEach(function(m){
+      var div=document.createElement('div');div.className='msg-item';
+      var url='https://libecity.com/room_list?room_id='+m.roomId+'&comment_id='+m.commentId;
+      div.addEventListener('click',function(){window.open(url,'_blank');});
+      var meta=document.createElement('div');meta.className='msg-meta';
+      if(m.isAll){var ab=document.createElement('span');ab.className='all-badge';ab.textContent='@ALL';meta.appendChild(ab);}
+      var un=document.createElement('span');un.className='user-name';un.textContent='👤 '+m.user;
+      var ta=document.createElement('span');ta.className='time-ago';ta.textContent=timeAgo(m.time);
+      meta.appendChild(un);meta.appendChild(ta);
+      var tx=document.createElement('div');tx.className='msg-text';tx.textContent=m.text.substring(0,200)+(m.text.length>200?'...':'');
+      div.appendChild(meta);div.appendChild(tx);ml.appendChild(div);
+    });}
+    card.appendChild(ml);
+    var cf=document.createElement('div');cf.className='card-footer';
+    cf.innerHTML='<a href="https://libecity.com/room_list?room_id='+r.room.id+'" target="_blank">チャットを開く →</a>';
+    card.appendChild(cf);grid.appendChild(card);
+  });
+  showApp();
+}
+
+function loadDashboard(){
+  showLoading();setMsg('データ取得中...');
+  var refresh=localStorage.getItem('libe_refresh');
+  getNewToken(refresh).then(function(){return Promise.all(ROOMS.map(fetchRoom));})
+    .then(function(results){renderDashboard(results);})
+    .catch(function(e){showSetup();alert('エラー: '+e.message+'
+トークンを再設定してください');});
+}
+
+document.getElementById('token-submit').addEventListener('click',function(){
+  var val=document.getElementById('token-input').value.trim();
+  if(!val)return;
+  currentToken=val;
+  showLoading();setMsg('確認中...');
+  fetch(BASE+'President-Tweet/messages?pageSize=1',{headers:{'Authorization':'Bearer '+val}})
+    .then(function(r){
+      if(r.ok){localStorage.setItem('libe_access_temp',val);return Promise.all(ROOMS.map(fetchRoom));}
+      throw new Error('トークンが無効です ('+r.status+')');
+    }).then(function(results){renderDashboard(results);})
+    .catch(function(e){showSetup();alert(e.message);});
+});
+
+showLoading();setMsg('起動中...');
+var refresh=localStorage.getItem('libe_refresh');
+var tempAccess=localStorage.getItem('libe_access_temp');
+if(refresh){
+  setMsg('ログイン中...');
+  getNewToken(refresh).then(function(){loadDashboard();}).catch(function(){showSetup();});
+}else if(tempAccess){
+  currentToken=tempAccess;setMsg('データ取得中...');
+  Promise.all(ROOMS.map(fetchRoom)).then(function(results){renderDashboard(results);}).catch(function(){showSetup();});
+}else{showSetup();}
+</script>
+</body>
+</html>
